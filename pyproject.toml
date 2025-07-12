@@ -1,7 +1,7 @@
 [project]
 name = "deep-research"
 version = "0.1.0"
-description = "Add your description here"
+description = "An app that can search the web and validate the results."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
