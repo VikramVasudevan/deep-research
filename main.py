@@ -1,63 +1,49 @@
-from json import load
-from openai import OpenAI
 from dotenv import load_dotenv
-from pydantic import BaseModel
+import asyncio
+from research_manager import ResearchManager
 import gradio as gr
-import json
+from planner_agent import WebSearchPlan
+from agents.tracing import trace
 
-class SearchOutput(BaseModel):
-    query: str
-    result: str
+load_dotenv(override=True)
 
-class ValidatorOutput(BaseModel):
-    searchOutput: SearchOutput
-    is_valid: bool
 
-def search_agent(query: str) -> SearchOutput | None:
-    client = OpenAI()
-    response = client.chat.completions.parse(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": query}],
-        response_format=SearchOutput,
+async def run(query: str):
+    with trace("deep-research"):
+        yield "Planning searches..."
+        search_plan = await ResearchManager().plan_searches(query)
+        yield "Formatting search plan..."
+        search_plan_markdown = ""
+        async for chunk in ResearchManager().format_search_plan(search_plan):
+            search_plan_markdown += chunk
+            yield search_plan_markdown
+
+        yield "Executing search plan..."
+        search_results = await ResearchManager().execute_search_plan(search_plan)
+        yield "Writing report..."
+        report = await ResearchManager().write_report(query, search_results)
+        yield report.markdown_report
+
+
+async def execute_search_plan(search_plan_str: str):
+    search_plan = WebSearchPlan.model_validate_json(search_plan_str)
+    results = await ResearchManager().execute_search_plan(search_plan)
+    return "\n\n".join(results)
+
+
+with gr.Blocks() as ui:
+    gr.Markdown("# Deep Research")
+    query_textbox = gr.Textbox(
+        label="What topic would you like to research?",
+        value="modern musical instruments",
     )
-    return response.choices[0].message.parsed
-
-def validate_search_results(search_results: str | SearchOutput | None) -> ValidatorOutput | None:
-    client = OpenAI()
-    if search_results is None:
-        return None
-    response = client.chat.completions.parse(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": search_results.model_dump_json() if isinstance(search_results, SearchOutput) else search_results}],
-        response_format=ValidatorOutput,
+    run_button = gr.Button("Run", variant="primary")
+    search_plan_markdown = gr.Markdown(label="Search Plan")
+    run_button.click(
+        lambda: gr.update(interactive=False), inputs=None, outputs=run_button
+    ).then(fn=run, inputs=query_textbox, outputs=search_plan_markdown).then(
+        lambda: gr.update(interactive=True), inputs=None, outputs=run_button
     )
-    return response.choices[0].message.parsed
+    query_textbox.submit(fn=run, inputs=query_textbox, outputs=search_plan_markdown)
 
-def render_gradio_interface():
-    with gr.Blocks() as demo:
-        gr.Markdown("# Deep Research")
-        query = gr.Textbox(label="Query", value="What is the capital of France?")
-        searchButton = gr.Button("Search")
-        searchResults = gr.Textbox(label="Search Results")
-        validateButton = gr.Button("Validate")
-        validateResults = gr.Textbox(label="Validate Results")
-
-        query.submit(fn=search_agent, inputs=query, outputs=searchResults)
-        searchResults.change(fn=validate_search_results, inputs=searchResults, outputs=validateResults)
-        searchButton.click(fn=search_agent, inputs=query, outputs=searchResults)
-        validateButton.click(fn=validate_search_results, inputs=searchResults, outputs=validateResults)
-
-        demo.launch()
-
-def main():
-    print("Hello from deep-research!")
-    load_dotenv(override=True)
-    render_gradio_interface()
-    # search_results = search_agent("What is the capital of France?")
-    # print(search_results)
-    # isValid = validate_search_results(search_results)
-    # print(isValid)
-
-
-if __name__ == "__main__":
-    main()
+    ui.launch(inbrowser=True)
