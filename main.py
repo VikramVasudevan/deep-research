@@ -36,14 +36,19 @@ with gr.Blocks() as ui:
     query_textbox = gr.Textbox(
         label="What topic would you like to research?",
         value="modern musical instruments",
+        scale=2,
     )
-    run_button = gr.Button("Run", variant="primary")
+    run_button = gr.Button("Research", variant="primary", scale=0)
     search_plan_markdown = gr.Markdown(label="Search Plan")
     run_button.click(
         lambda: gr.update(interactive=False), inputs=None, outputs=run_button
     ).then(fn=run, inputs=query_textbox, outputs=search_plan_markdown).then(
         lambda: gr.update(interactive=True), inputs=None, outputs=run_button
     )
-    query_textbox.submit(fn=run, inputs=query_textbox, outputs=search_plan_markdown)
+    query_textbox.submit(
+        lambda: gr.update(interactive=False), inputs=None, outputs=query_textbox
+    ).then(fn=run, inputs=query_textbox, outputs=search_plan_markdown).then(
+        lambda: gr.update(interactive=True), inputs=None, outputs=query_textbox
+    )
 
     ui.launch(inbrowser=True)
